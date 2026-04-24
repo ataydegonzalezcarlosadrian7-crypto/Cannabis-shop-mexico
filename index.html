@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CANNABIS SHOP | Premium High-End</title>
+    <title>CANNABIS SHOP | Boutique Elite</title>
     
     <!-- Scripts de Estilo y Framework -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
     
     <!-- Firebase SDK Compat -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -21,35 +22,20 @@
 
     <style type="text/tailwindcss">
         @layer base {
-            body { 
-                @apply bg-[#050505] text-zinc-100 antialiased; 
-                font-family: 'Plus Jakarta Sans', sans-serif; 
-            }
+            body { @apply bg-[#050505] text-zinc-100 antialiased overflow-x-hidden; font-family: 'Plus Jakarta Sans', sans-serif; }
             .font-serif { font-family: 'Playfair Display', serif; }
         }
-        
         .no-scrollbar::-webkit-scrollbar { display: none; }
+        .glass { @apply bg-zinc-900/40 backdrop-blur-3xl border border-white/5; }
+        .btn-gold { @apply bg-emerald-600 text-white px-8 py-5 text-[10px] uppercase font-black tracking-[0.4em] transition-all hover:bg-emerald-500 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-20 shadow-[0_0_40px_rgba(16,185,129,0.2)]; }
+        .input-pro { @apply bg-zinc-950 border border-zinc-800 p-4 rounded-2xl text-sm focus:border-emerald-500 outline-none transition-all placeholder:text-zinc-700; }
         
-        .fade-in { animation: fadeIn 0.8s ease-out forwards; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-
-        .loader {
-            border-top-color: #10b981;
-            animation: spinner 0.8s linear infinite;
+        .shimmer {
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+            background-size: 200% 100%;
+            animation: shimmer 2s infinite;
         }
-        @keyframes spinner { to { transform: rotate(360deg); } }
-
-        .btn-emerald {
-            @apply bg-emerald-600 text-white px-8 py-4 text-[11px] uppercase font-black tracking-[0.3em] transition-all hover:bg-emerald-500 hover:shadow-[0_0_30px_rgba(16,185,129,0.3)] disabled:opacity-20;
-        }
-
-        .glass-card {
-            @apply bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 hover:border-emerald-500/50 transition-all duration-500;
-        }
-
-        .input-premium {
-            @apply bg-zinc-900/50 border border-zinc-800 p-4 text-white outline-none focus:border-emerald-500 transition-all rounded-lg;
-        }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
     </style>
 </head>
 <body>
@@ -57,8 +43,14 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
+        
+        // Manejo de Framer Motion
+        const { motion, AnimatePresence } = window.Motion || window.framerMotion || { 
+            motion: { div: (p) => <div {...p} />, section: (p) => <section {...p} /> }, 
+            AnimatePresence: ({ children }) => <>{children}</> 
+        };
 
-        // --- CONFIGURACIÓN DE TU FIREBASE ---
+        // Configuración de Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyABHxYWonX7uIN6duaY3-qZlz7nX84RSYU",
             authDomain: "cannabis-shop-mexico.firebaseapp.com",
@@ -69,73 +61,55 @@
             measurementId: "G-DQ822CGPHL"
         };
 
-        // Inicialización de Firebase
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
-        }
-        const auth = firebase.auth();
+        // Inicializar Firebase si no existe
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
+        const auth = firebase.auth();
 
-        // --- CONFIGURACIÓN DE LA TIENDA ---
-        const appId = "cannabis-shop-mexico"; 
+        // --- CONFIGURACIÓN DE PAGO ---
+        const STRIPE_CHECKOUT_URL = "https://buy.stripe.com/9B614n2vJfBecWc50R3gk00"; 
+        const SHIPPING_COST = 150;
         const ADMIN_PIN = "2024";
-        const CATEGORIES = ["Todos", "Semillas de cannabis", "Indica", "Sativa", "Híbrida", "Comestibles", "Extractos"];
-        const WHATSAPP_NUM = "5215648515663";
-        
-        // CORREO PAYPAL ACTUALIZADO
-        const PAYPAL_USER = "santagonzalezmerino@gmail.com"; 
-        const SHIPPING_COST = 150; 
+        const WHATSAPP_CONTACT = "5215648515663";
 
         function App() {
-            const [view, setView] = useState('home');
             const [products, setProducts] = useState([]);
             const [cart, setCart] = useState([]);
+            const [isCartOpen, setIsCartOpen] = useState(false);
             const [loading, setLoading] = useState(true);
+            const [view, setView] = useState('home');
             const [isAdmin, setIsAdmin] = useState(false);
-            const [activeCategory, setActiveCategory] = useState('Todos');
-            const [notification, setNotification] = useState(null);
             const [showAdminModal, setShowAdminModal] = useState(false);
             const [isProcessing, setIsProcessing] = useState(false);
-            const [includeShipping, setIncludeShipping] = useState(false);
+            const [notification, setNotification] = useState(null);
+            const [deliveryMethod, setDeliveryMethod] = useState('envio');
+            const [customerData, setCustomerData] = useState({ nombre: '', telefono: '', direccion: '', ciudad: '', cp: '' });
             const [pinInput, setPinInput] = useState('');
             const [newProduct, setNewProduct] = useState({ name: '', price: '', category: 'Semillas de cannabis', image: '', description: '' });
 
             useEffect(() => {
-                // Autenticación anónima para permitir lectura en GitHub Pages
-                auth.signInAnonymously().catch(e => console.error("Error Auth:", e));
-
-                const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('products')
-                    .onSnapshot((snap) => {
-                        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                        setProducts(data);
+                // Escuchar cambios en la base de datos
+                const unsub = db.collection('artifacts').doc('cannabis-shop-mexico').collection('public').doc('data').collection('products')
+                    .onSnapshot(snap => {
+                        setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
                         setLoading(false);
-                    }, (err) => {
-                        console.error("Error cargando productos:", err);
-                        setLoading(false);
-                    });
+                    }, err => setLoading(false));
 
+                // Auth anónima para visualización pública
+                auth.signInAnonymously();
+
+                // Verificar sesión de Admin previa
                 if (sessionStorage.getItem('shopAdminAuth') === 'true') setIsAdmin(true);
+
                 return () => unsub();
             }, []);
+
+            const subtotal = useMemo(() => cart.reduce((a, b) => a + b.price, 0), [cart]);
+            const total = useMemo(() => subtotal + (deliveryMethod === 'envio' ? SHIPPING_COST : 0), [subtotal, deliveryMethod]);
 
             const notify = (msg) => {
                 setNotification(msg);
                 setTimeout(() => setNotification(null), 3000);
-            };
-
-            const subtotal = useMemo(() => cart.reduce((a, b) => a + b.price, 0), [cart]);
-            const total = useMemo(() => subtotal + (includeShipping ? SHIPPING_COST : 0), [subtotal, includeShipping]);
-
-            const filtered = useMemo(() => 
-                activeCategory === 'Todos' ? products : products.filter(p => p.category === activeCategory)
-            , [products, activeCategory]);
-
-            // Función de Pago de PayPal
-            const handlePayPalPayment = () => {
-                if (cart.length === 0) return;
-                const itemNames = cart.map(i => i.name).join(', ');
-                const paypalUrl = `https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=${encodeURIComponent(PAYPAL_USER)}&amount=${total}&currency_code=MXN&item_name=${encodeURIComponent('Pedido Cannabis Shop: ' + itemNames)}`;
-                window.open(paypalUrl, '_blank');
             };
 
             const handleAdminLogin = (e) => {
@@ -145,9 +119,9 @@
                     sessionStorage.setItem('shopAdminAuth', 'true');
                     setView('admin');
                     setPinInput('');
-                    notify("Sesión iniciada");
+                    notify("Dashboard Staff Activo");
                 } else {
-                    notify("PIN incorrecto");
+                    notify("PIN de Seguridad Incorrecto");
                     setPinInput('');
                 }
             };
@@ -177,196 +151,127 @@
                 if (isProcessing || !newProduct.image) return;
                 setIsProcessing(true);
                 try {
-                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('products').add({
-                        ...newProduct,
-                        price: Number(newProduct.price),
+                    await db.collection('artifacts').doc('cannabis-shop-mexico').collection('public').doc('data').collection('products').add({
+                        ...newProduct, 
+                        price: Number(newProduct.price), 
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
                     setNewProduct({ name: '', price: '', category: 'Semillas de cannabis', image: '', description: '' });
                     setShowAdminModal(false);
-                    notify("Variedad publicada");
-                } catch (err) {
-                    notify("Error al publicar");
-                } finally {
-                    setIsProcessing(false);
+                    notify("Inventario Actualizado");
+                } catch (err) { notify("Error al guardar"); }
+                finally { setIsProcessing(false); }
+            };
+
+            const checkout = () => {
+                if (!customerData.nombre || !customerData.telefono) {
+                    notify("Completa tus datos de contacto");
+                    return;
                 }
+                const itemsList = cart.map(i => i.name).join(', ');
+                const deliveryNote = deliveryMethod === 'envio' ? `Envío a: ${customerData.direccion}` : `Entrega Personal: Metro Cuatro Caminos`;
+                
+                // Formatear mensaje para el dueño
+                const waMsg = `*ORDEN CANNABIS SHOP ELITE*\n--------------------------\n*Cliente:* ${customerData.nombre}\n*Teléfono:* ${customerData.telefono}\n*Pedido:* ${itemsList}\n*Entrega:* ${deliveryNote}\n*TOTAL:* $${total} MXN\n--------------------------\n_Pendiente de confirmación Stripe._`;
+                
+                // Abrir WhatsApp con el pedido
+                window.open(`https://wa.me/${WHATSAPP_CONTACT}?text=${encodeURIComponent(waMsg)}`, '_blank');
+                
+                // Abrir Checkout de Stripe
+                window.open(STRIPE_CHECKOUT_URL, '_blank');
             };
 
             if (loading) return (
-                <div className="h-screen flex flex-col items-center justify-center bg-[#020202]">
-                    <div className="w-16 h-16 border-t-4 border-emerald-500 loader rounded-full"></div>
+                <div className="h-screen flex flex-col items-center justify-center bg-black gap-4">
+                    <div className="w-12 h-12 border-2 border-emerald-500 border-t-transparent animate-spin rounded-full"></div>
+                    <span className="text-[10px] uppercase font-black tracking-[0.4em] text-emerald-500">Boutique Elite</span>
                 </div>
             );
 
             return (
                 <div className="min-h-screen">
-                    {/* Header */}
-                    <nav className="fixed top-0 w-full z-50 bg-black/80 backdrop-blur-2xl px-6 md:px-12 h-20 flex justify-between items-center border-b border-white/5">
-                        <div className="flex items-center gap-8">
-                            <button onClick={() => isAdmin ? setView('admin') : setView('login')} className="opacity-10 hover:opacity-100 transition-opacity p-2">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-                            </button>
-                            <h1 onClick={() => setView('home')} className="font-serif text-2xl md:text-3xl font-bold tracking-tighter cursor-pointer text-white italic uppercase">CANNABIS<span className="text-emerald-500">SHOP</span></h1>
+                    {/* Barra de Navegación */}
+                    <nav className="fixed top-0 w-full z-[60] glass h-24 flex justify-between items-center px-6 md:px-16">
+                        <div className="flex flex-col">
+                            <h1 onClick={() => setView('home')} className="font-serif text-3xl font-bold cursor-pointer italic text-white tracking-tighter leading-none uppercase">CANNABIS<span className="text-emerald-500 ml-1">SHOP</span></h1>
+                            <span className="text-[8px] uppercase tracking-[0.6em] font-black text-zinc-600">Pure Organic Culture</span>
                         </div>
-                        <div className="flex items-center gap-6">
-                            <button onClick={() => setView('shop')} className="text-[10px] uppercase font-black tracking-widest hidden md:block text-zinc-400 hover:text-emerald-500">Catálogo</button>
-                            <button onClick={() => setView('cart')} className="relative group bg-emerald-500/10 p-3 rounded-full border border-emerald-500/20">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-                                {cart.length > 0 && (
-                                    <span className="absolute -top-1 -right-1 bg-white text-emerald-600 text-[9px] w-5 h-5 rounded-full flex items-center justify-center font-black">{cart.length}</span>
-                                )}
+                        <div className="flex items-center gap-10">
+                            <button onClick={() => setView('shop')} className="text-[10px] uppercase font-black tracking-[0.3em] text-zinc-400 hover:text-white transition-all">Catálogo</button>
+                            <button onClick={() => setIsCartOpen(true)} className="relative group p-4 bg-emerald-500/5 rounded-full border border-emerald-500/10 hover:bg-emerald-500/20 transition-all">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                                {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-white text-emerald-600 text-[9px] w-5 h-5 rounded-full flex items-center justify-center font-black shadow-2xl">{cart.length}</span>}
                             </button>
                         </div>
                     </nav>
 
-                    <main className="pt-20">
+                    {/* Vistas Principales */}
+                    <main className="pt-24 min-h-screen">
                         {view === 'home' && (
-                            <section className="relative h-[90vh] flex flex-col items-center justify-center text-center px-6 overflow-hidden">
-                                <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-emerald-900/10 via-transparent to-transparent"></div>
-                                <div className="relative z-10 space-y-10 fade-in max-w-5xl">
-                                    <div className="inline-block px-4 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/5">
-                                        <span className="text-[9px] uppercase tracking-[0.4em] font-black text-emerald-400">Pureza • Discreción • Calidad</span>
-                                    </div>
-                                    <h2 className="text-7xl md:text-[10rem] font-serif italic font-bold tracking-tighter leading-[0.85] text-white uppercase tracking-tighter">THE HIGH <br/> <span className="text-emerald-500">SOCIETY</span></h2>
-                                    <button onClick={() => setView('shop')} className="btn-emerald px-16 py-6 shadow-2xl mt-10">Explorar Selección</button>
-                                </div>
+                            <section className="h-[90vh] flex flex-col items-center justify-center text-center px-6 relative">
+                                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(16,185,129,0.05),_transparent_70%)]"></div>
+                                <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} transition={{duration:1}} className="space-y-8 relative z-10">
+                                    <div className="shimmer h-1 w-24 mx-auto rounded-full"></div>
+                                    <h2 className="text-8xl md:text-[11rem] font-serif italic font-bold tracking-tighter text-white leading-[0.8] mb-12">HIGHEST<br/><span className="text-emerald-500 uppercase tracking-[0.1em] text-4xl md:text-6xl not-italic font-black">Standard</span></h2>
+                                    <p className="text-zinc-500 font-serif italic text-2xl max-w-2xl mx-auto">Experiencia de dispensario premium con entrega discreta a domicilio o punto personal.</p>
+                                    <button onClick={() => setView('shop')} className="btn-gold mt-10">Explorar Selección</button>
+                                </motion.div>
                             </section>
                         )}
 
                         {view === 'shop' && (
-                            <div className="max-w-7xl mx-auto px-6 py-16">
-                                <header className="mb-16 flex flex-col md:flex-row justify-between items-center gap-10">
-                                    <h2 className="text-6xl font-serif italic tracking-tighter text-white">Menú</h2>
-                                    <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar max-w-full">
-                                        {CATEGORIES.map(c => (
-                                            <button key={c} onClick={() => setActiveCategory(c)} className={`text-[9px] uppercase font-black tracking-widest px-6 py-3 rounded-xl transition-all border ${activeCategory === c ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-zinc-900/50 text-zinc-500 border-zinc-800 hover:text-emerald-400'}`}>
-                                                {c}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </header>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                                    {filtered.map(p => (
-                                        <div key={p.id} className="fade-in group glass-card p-4 rounded-[2rem]">
-                                            <div className="aspect-[4/5] bg-zinc-950 rounded-[1.5rem] mb-6 overflow-hidden relative cursor-pointer" onClick={() => { setCart([...cart, p]); notify("Añadido"); }}>
-                                                <img src={p.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" alt={p.name} />
-                                                <div className="absolute inset-x-0 bottom-4 px-4 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all">
-                                                    <button className="w-full bg-white text-black py-4 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-xl">Añadir al carrito</button>
-                                                </div>
-                                            </div>
-                                            <div className="px-2 space-y-1">
-                                                <div className="flex justify-between items-start">
-                                                    <h4 className="font-serif text-2xl italic font-bold text-white tracking-tighter">{p.name}</h4>
-                                                    <span className="text-xl font-black text-emerald-500">${p.price}</span>
-                                                </div>
-                                                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">{p.category}</span>
+                            <div className="max-w-[1600px] mx-auto px-6 md:px-12 py-24 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12">
+                                {products.length > 0 ? products.map(p => (
+                                    <motion.div whileHover={{y:-10}} key={p.id} className="group glass p-5 rounded-[3rem] transition-all duration-700">
+                                        <div className="aspect-[4/5] rounded-[2.5rem] overflow-hidden bg-zinc-950 relative">
+                                            <img src={p.image} className="w-full h-full object-cover grayscale opacity-70 group-hover:grayscale-0 group-hover:opacity-100 group-hover:scale-105 transition-all duration-1000" alt={p.name} />
+                                            <div className="absolute inset-0 flex items-center justify-center px-8 opacity-0 group-hover:opacity-100 transition-all translate-y-4 group-hover:translate-y-0 duration-500">
+                                                <button onClick={() => { setCart([...cart, p]); setIsCartOpen(true); }} className="w-full bg-white text-black py-5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest shadow-2xl">Añadir a la Bolsa</button>
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {view === 'cart' && (
-                            <div className="max-w-4xl mx-auto px-6 py-20 fade-in">
-                                <h2 className="text-7xl font-serif italic mb-16 tracking-tighter text-center text-white">Tu <span className="text-emerald-500">Bolsa</span></h2>
-                                {cart.length === 0 ? (
-                                    <div className="text-center py-20 glass-card rounded-[3rem] border-dashed border-zinc-700">
-                                        <p className="italic font-serif text-2xl text-zinc-600">No hay productos seleccionados.</p>
-                                        <button onClick={() => setView('shop')} className="btn-emerald mt-8">Regresar al menú</button>
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-12">
-                                        <div className="lg:col-span-3 space-y-4">
-                                            {cart.map((item, idx) => (
-                                                <div key={idx} className="glass-card p-4 rounded-2xl flex gap-6 items-center">
-                                                    <img src={item.image} className="w-20 h-20 object-cover rounded-xl shadow-lg" />
-                                                    <div className="flex-grow">
-                                                        <div className="flex justify-between">
-                                                            <h4 className="font-serif text-xl font-bold text-white italic">{item.name}</h4>
-                                                            <button onClick={() => setCart(cart.filter((_, i) => i !== idx))} className="text-zinc-700 hover:text-red-500 p-2">&times;</button>
-                                                        </div>
-                                                        <p className="text-lg font-black text-emerald-500">${item.price}</p>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="lg:col-span-2 space-y-6">
-                                            <div className="glass-card p-8 rounded-[2rem] space-y-6">
-                                                <h3 className="text-xl font-bold text-white border-b border-zinc-800 pb-4">Checkout</h3>
-                                                <div className="flex items-center justify-between p-4 bg-zinc-950 rounded-xl border border-zinc-800 cursor-pointer" onClick={() => setIncludeShipping(!includeShipping)}>
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`w-4 h-4 rounded border flex items-center justify-center ${includeShipping ? 'bg-emerald-500 border-emerald-500' : 'border-zinc-700'}`}>
-                                                            {includeShipping && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4"><path d="M20 6L9 17l-5-5"/></svg>}
-                                                        </div>
-                                                        <span className="text-[10px] font-black uppercase">Incluir Envío</span>
-                                                    </div>
-                                                    <span className="text-emerald-500 text-xs font-bold">${SHIPPING_COST}</span>
-                                                </div>
-                                                <div className="flex justify-between items-end border-t border-zinc-800 pt-6">
-                                                    <span className="text-[10px] font-black uppercase text-emerald-500">Total a pagar</span>
-                                                    <span className="text-5xl font-serif italic font-bold text-white tracking-tighter leading-none">${total}</span>
-                                                </div>
-                                                <div className="space-y-3 pt-6">
-                                                    <button onClick={handlePayPalPayment} className="w-full bg-white text-black py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-200 transition-all flex items-center justify-center gap-2 shadow-xl shadow-white/5">
-                                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M7 2L2 14.5h3.5l1.5-3.5h5.5c3.5 0 6.5-1.5 6.5-5.5s-3-5.5-6.5-5.5H7zm1.5 3h4.5c1.5 0 2.5.5 2.5 2.5s-1 2.5-2.5 2.5H9l-1.5 5h-1.5L8.5 5z"/></svg>
-                                                        Pagar con PayPal
-                                                    </button>
-                                                    <button onClick={() => {
-                                                        const text = `Pedido Cannabis Shop:\nVariedades: ${cart.map(i => i.name).join(', ')}\nEnvío: ${includeShipping ? 'Si' : 'No'}\nTotal: $${total}`;
-                                                        window.open(`https://wa.me/${WHATSAPP_NUM}?text=${encodeURIComponent(text)}`, '_blank');
-                                                    }} className="w-full border border-emerald-500/30 text-emerald-500 py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500/10 transition-all">WhatsApp Soporte</button>
-                                                </div>
+                                        <div className="mt-8 flex justify-between items-center px-4">
+                                            <div className="space-y-1">
+                                                <h4 className="font-serif text-3xl font-bold italic tracking-tighter text-white">{p.name}</h4>
+                                                <p className="text-[9px] uppercase font-black text-zinc-600 tracking-widest">Exotic Flower</p>
                                             </div>
+                                            <span className="text-2xl font-black text-emerald-500 tracking-tighter">${p.price}</span>
                                         </div>
+                                    </motion.div>
+                                )) : (
+                                    <div className="col-span-full py-40 text-center opacity-10">
+                                        <p className="font-serif italic text-4xl tracking-widest">Cosechando nuevas variedades...</p>
                                     </div>
                                 )}
                             </div>
                         )}
 
                         {view === 'login' && (
-                            <div className="max-w-xs mx-auto py-48 text-center space-y-12 fade-in">
-                                <h3 className="font-serif text-4xl italic tracking-tighter text-white uppercase font-bold tracking-widest">Acceso Staff</h3>
-                                <form onSubmit={handleAdminLogin} className="space-y-6">
-                                    <input 
-                                        type="password" 
-                                        className="w-full bg-transparent border-b-2 border-zinc-900 py-6 text-center text-6xl font-serif tracking-[0.5em] outline-none focus:border-emerald-500 text-emerald-500"
-                                        placeholder="••••"
-                                        value={pinInput}
-                                        onChange={e => setPinInput(e.target.value)}
-                                        autoFocus
-                                    />
-                                    <button className="btn-emerald w-full mt-8">Verificar</button>
+                            <div className="max-w-md mx-auto py-48 text-center space-y-12 px-6">
+                                <h3 className="font-serif text-5xl italic font-bold text-white uppercase tracking-tighter">Staff Authorization</h3>
+                                <form onSubmit={handleAdminLogin} className="space-y-8">
+                                    <input type="password" className="w-full bg-transparent border-b border-zinc-900 py-8 text-center text-6xl font-serif text-emerald-500 outline-none" placeholder="••••" value={pinInput} onChange={e => setPinInput(e.target.value)} autoFocus />
+                                    <button className="btn-gold w-full rounded-2xl">Confirmar</button>
                                 </form>
-                                <button onClick={() => setView('home')} className="text-[9px] text-zinc-700 uppercase font-black">Regresar</button>
                             </div>
                         )}
 
                         {view === 'admin' && isAdmin && (
-                            <div className="max-w-7xl mx-auto px-6 py-16 fade-in">
-                                <header className="flex flex-col md:flex-row justify-between items-center mb-20 gap-8 border-b border-zinc-900 pb-12 text-center md:text-left">
-                                    <div>
-                                        <p className="text-emerald-500 font-black uppercase text-[10px] tracking-widest mb-2">Editor de Inventario</p>
-                                        <h2 className="text-5xl md:text-7xl font-serif italic font-bold tracking-tighter text-white uppercase leading-none">Stock</h2>
-                                    </div>
-                                    <div className="flex gap-4">
-                                        <button onClick={() => { setIsAdmin(false); setView('home'); sessionStorage.removeItem('shopAdminAuth'); }} className="px-6 py-4 text-[10px] uppercase font-black text-zinc-600 hover:text-white transition-all">Cerrar</button>
-                                        <button onClick={() => setShowAdminModal(true)} className="btn-emerald rounded-2xl shadow-emerald-900/20">Nueva variedad</button>
+                            <div className="max-w-7xl mx-auto px-6 py-24">
+                                <header className="flex justify-between items-end mb-20 border-b border-zinc-900 pb-12">
+                                    <h2 className="text-7xl font-serif italic font-bold text-white uppercase tracking-tighter">Stock Control</h2>
+                                    <div className="flex gap-6">
+                                        <button onClick={() => {setIsAdmin(false); setView('home'); sessionStorage.removeItem('shopAdminAuth');}} className="text-[10px] uppercase font-black text-zinc-500">Salir</button>
+                                        <button onClick={() => setShowAdminModal(true)} className="btn-gold rounded-3xl">Añadir Variedad</button>
                                     </div>
                                 </header>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                                     {products.map(p => (
-                                        <div key={p.id} className="glass-card p-6 flex gap-6 rounded-[2rem] items-center">
-                                            <img src={p.image} className="w-20 h-28 object-cover rounded-2xl bg-zinc-950 shadow-2xl" />
+                                        <div key={p.id} className="glass p-8 flex gap-8 rounded-[3rem] items-center">
+                                            <img src={p.image} className="w-24 h-24 bg-zinc-900 rounded-3xl object-cover" alt={p.name} />
                                             <div className="flex-grow space-y-2">
-                                                <h4 className="font-serif text-2xl italic font-bold text-white tracking-tighter leading-none">{p.name}</h4>
-                                                <p className="text-[10px] font-black text-emerald-500">${p.price} • {p.category}</p>
-                                                <button onClick={async () => {
-                                                    if(confirm("¿Eliminar de forma permanente?")) {
-                                                        await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('products').doc(p.id).delete();
-                                                        notify("Variedad eliminada");
-                                                    }
-                                                }} className="text-[9px] uppercase font-black text-red-500/20 hover:text-red-500 transition-all">Eliminar</button>
+                                                <h4 className="font-serif text-2xl font-bold text-white tracking-tighter italic">{p.name}</h4>
+                                                <p className="text-emerald-500 font-black text-lg">${p.price}</p>
+                                                <button onClick={async () => { if(confirm("¿Eliminar variedad?")) await db.collection('artifacts').doc('cannabis-shop-mexico').collection('public').doc('data').collection('products').doc(p.id).delete(); }} className="text-red-500/40 hover:text-red-500 text-[9px] font-black uppercase">Remover</button>
                                             </div>
                                         </div>
                                     ))}
@@ -375,54 +280,124 @@
                         )}
                     </main>
 
-                    {/* Modal Admin */}
-                    {showAdminModal && (
-                        <div className="fixed inset-0 z-[100] bg-[#020202] flex flex-col p-6 md:p-8 overflow-y-auto animate-fade-in">
-                            <div className="max-w-2xl mx-auto w-full py-12">
-                                <div className="flex justify-between items-center mb-16">
-                                    <h2 className="font-serif text-5xl md:text-6xl italic font-bold tracking-tighter text-emerald-500 uppercase">Subir Producto</h2>
-                                    <button onClick={() => setShowAdminModal(false)} className="text-5xl font-light text-zinc-800 hover:text-white transition-transform duration-500 hover:rotate-90">&times;</button>
+                    {/* Footer con el Candado Staff */}
+                    <footer className="py-32 text-center border-t border-zinc-900 bg-zinc-950/20 mt-40 flex flex-col items-center gap-12">
+                         <div className="space-y-4">
+                            <h2 className="font-serif text-3xl font-bold text-white italic tracking-tighter uppercase">CANNABIS<span className="text-emerald-500 ml-1">SHOP</span></h2>
+                            <p className="text-[9px] uppercase tracking-[0.8em] font-black text-zinc-800">Pure • Elite • Organic</p>
+                         </div>
+                         <button onClick={() => setView('login')} className="opacity-5 hover:opacity-100 transition-opacity p-6">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                         </button>
+                    </footer>
+
+                    {/* Modal Añadir Stock */}
+                    <AnimatePresence>
+                        {showAdminModal && (
+                            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-0 z-[100] bg-black/95 p-8 overflow-y-auto">
+                                <div className="max-w-3xl mx-auto py-20 space-y-16">
+                                    <div className="flex justify-between items-center">
+                                        <h2 className="font-serif text-6xl font-bold text-emerald-500 italic tracking-tighter">Registrar Variedad</h2>
+                                        <button onClick={() => setShowAdminModal(false)} className="text-5xl font-light">&times;</button>
+                                    </div>
+                                    <form onSubmit={saveProduct} className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                                        <div className="space-y-6">
+                                            <div className="aspect-square bg-zinc-900 border-2 border-dashed border-zinc-800 rounded-[3rem] flex items-center justify-center cursor-pointer overflow-hidden" onClick={() => document.getElementById('fileIn').click()}>
+                                                {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview" /> : <p className="text-[9px] uppercase font-black tracking-widest text-emerald-500 opacity-40">Fotografía del Producto</p>}
+                                            </div>
+                                            <input id="fileIn" type="file" className="hidden" accept="image/*" onChange={handleImage} />
+                                        </div>
+                                        <div className="space-y-8 flex flex-col justify-center">
+                                            <input className="input-pro w-full bg-transparent border-b-2 rounded-none border-x-0 border-t-0 text-3xl font-serif italic" placeholder="Nombre de la cepa" value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} required />
+                                            <input type="number" className="input-pro w-full bg-transparent border-b-2 rounded-none border-x-0 border-t-0 text-4xl font-black text-emerald-500" placeholder="Precio MXN" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: e.target.value})} required />
+                                            <button disabled={isProcessing || !newProduct.image} className="btn-gold w-full py-7 rounded-3xl shadow-2xl">{isProcessing ? 'Sincronizando...' : 'Publicar Variedad'}</button>
+                                        </div>
+                                    </form>
                                 </div>
-                                <form onSubmit={saveProduct} className="space-y-12">
-                                    <div 
-                                        className="aspect-video bg-zinc-900/40 border-2 border-dashed border-zinc-800 rounded-[3rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all hover:border-emerald-500/40 group"
-                                        onClick={() => document.getElementById('fileIn').click()}
-                                    >
-                                        {newProduct.image ? (
-                                            <img src={newProduct.image} className="w-full h-full object-cover" />
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* Carrito Lateral Boutique */}
+                    <AnimatePresence>
+                        {isCartOpen && (
+                            <>
+                                <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={() => setIsCartOpen(false)} className="fixed inset-0 bg-black/80 backdrop-blur-2xl z-[100]" />
+                                <motion.div initial={{x:'100%'}} animate={{x:0}} exit={{x:'100%'}} transition={{type:'spring', damping:30, stiffness:200}} className="fixed right-0 top-0 h-screen w-full md:w-[550px] bg-[#080808] z-[101] flex flex-col border-l border-white/5 shadow-[-40px_0_100px_rgba(0,0,0,0.9)]">
+                                    <div className="p-10 flex justify-between items-center border-b border-white/5">
+                                        <h3 className="text-4xl font-serif italic font-bold tracking-tighter leading-none text-white">Bolsa <span className="text-emerald-500 text-xs font-sans font-black ml-4 uppercase tracking-[0.3em] bg-emerald-500/10 px-3 py-1 rounded-full">{cart.length} Variedades</span></h3>
+                                        <button onClick={() => setIsCartOpen(false)} className="w-12 h-12 flex items-center justify-center rounded-full border border-white/5 text-3xl font-light hover:bg-white/5 transition-all">&times;</button>
+                                    </div>
+
+                                    <div className="flex-grow overflow-y-auto p-10 space-y-10 no-scrollbar">
+                                        {cart.length === 0 ? (
+                                            <div className="h-full flex flex-col items-center justify-center opacity-10">
+                                                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                                                <p className="mt-6 font-serif italic text-2xl tracking-widest">Carrito vacío</p>
+                                            </div>
                                         ) : (
-                                            <div className="text-center opacity-30 group-hover:opacity-100 transition-opacity">
-                                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="1.5" className="mx-auto mb-4"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-                                                <p className="text-[10px] uppercase font-black text-emerald-500 tracking-widest">Fotografía de la cepa</p>
+                                            cart.map((item, idx) => (
+                                                <div key={idx} className="flex gap-8 items-center group">
+                                                    <div className="w-28 h-28 bg-zinc-900 rounded-[2rem] overflow-hidden flex-shrink-0 border border-white/5"><img src={item.image} className="w-full h-full object-cover" alt={item.name} /></div>
+                                                    <div className="flex-grow space-y-2">
+                                                        <div className="flex justify-between items-start">
+                                                            <h4 className="font-serif text-2xl font-bold italic tracking-tighter leading-none text-white">{item.name}</h4>
+                                                            <button onClick={() => setCart(cart.filter((_, i) => i !== idx))} className="text-zinc-700 hover:text-red-500 transition-colors p-2">&times;</button>
+                                                        </div>
+                                                        <p className="text-emerald-500 font-black text-xl">${item.price}</p>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+
+                                        {cart.length > 0 && (
+                                            <div className="space-y-10 pt-10 border-t border-white/5">
+                                                <div className="space-y-4">
+                                                    <p className="text-[10px] uppercase font-black text-zinc-600 tracking-[0.4em] px-2 font-bold">Entrega y Logística</p>
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <button onClick={() => setDeliveryMethod('envio')} className={`p-6 rounded-3xl border-2 transition-all text-[10px] font-black uppercase tracking-widest ${deliveryMethod === 'envio' ? 'border-emerald-500 bg-emerald-500/10 text-white' : 'border-zinc-900 text-zinc-600'}`}>📦 Envío Seguro</button>
+                                                        <button onClick={() => setDeliveryMethod('personal')} className={`p-6 rounded-3xl border-2 transition-all text-[10px] font-black uppercase tracking-widest ${deliveryMethod === 'personal' ? 'border-emerald-500 bg-emerald-500/10 text-white' : 'border-zinc-900 text-zinc-600'}`}>🤝 Punto Metro</button>
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-4">
+                                                    <p className="text-[10px] uppercase font-black text-zinc-600 tracking-[0.4em] px-2 font-bold">Información de Recepción</p>
+                                                    <div className="grid grid-cols-1 gap-4">
+                                                        <input placeholder="Nombre completo" className="input-pro" value={customerData.nombre} onChange={e => setCustomerData({...customerData, nombre: e.target.value})} />
+                                                        <input placeholder="Teléfono de contacto" className="input-pro" value={customerData.telefono} onChange={e => setCustomerData({...customerData, telefono: e.target.value})} />
+                                                        {deliveryMethod === 'envio' && <input placeholder="Dirección detallada de entrega" className="input-pro" value={customerData.direccion} onChange={e => setCustomerData({...customerData, direccion: e.target.value})} />}
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
-                                    <input id="fileIn" type="file" className="hidden" accept="image/*" onChange={handleImage} />
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                        <input className="input-premium w-full text-2xl font-serif italic bg-transparent border-b-2 rounded-none border-x-0 border-t-0 p-0 py-3 border-zinc-800 focus:border-emerald-500 transition-all" placeholder="Variedad / Nombre" value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} required />
-                                        <input type="number" className="input-premium w-full text-2xl font-black bg-transparent border-b-2 rounded-none border-x-0 border-t-0 p-0 py-3 border-zinc-800 text-emerald-500 focus:border-emerald-500 transition-all" placeholder="Precio MXN" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: e.target.value})} required />
-                                        <select className="input-premium w-full uppercase font-black text-[10px] tracking-widest bg-zinc-950 p-4 rounded-xl border border-zinc-800" value={newProduct.category} onChange={e => setNewProduct({...newProduct, category: e.target.value})}>
-                                            {CATEGORIES.slice(1).map(c => <option key={c} value={c} className="bg-black">{c}</option>)}
-                                        </select>
-                                    </div>
-                                    <button disabled={isProcessing || !newProduct.image} className="btn-emerald w-full py-8 text-[11px] rounded-[2.5rem] shadow-xl shadow-emerald-900/10">
-                                        {isProcessing ? 'Sincronizando...' : 'Publicar Variedad'}
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
-                    )}
+
+                                    {cart.length > 0 && (
+                                        <div className="p-10 bg-zinc-950 border-t border-white/5 space-y-10">
+                                            <div className="space-y-4">
+                                                <div className="flex justify-between items-center text-xs text-zinc-600 uppercase font-black tracking-widest"><span>Subtotal</span><span>${subtotal}</span></div>
+                                                <div className="flex justify-between items-center text-xs text-zinc-600 uppercase font-black tracking-widest"><span>Logística</span><span>{deliveryMethod === 'envio' ? `$${SHIPPING_COST}` : 'GRATIS'}</span></div>
+                                                <div className="flex justify-between items-end pt-6 border-t border-zinc-900">
+                                                    <span className="text-[11px] uppercase font-black tracking-[0.5em] text-emerald-500 font-bold">Total a Pagar</span>
+                                                    <span className="text-7xl font-serif italic font-bold tracking-tighter text-white leading-none">${total}</span>
+                                                </div>
+                                            </div>
+                                            <button onClick={checkout} className="w-full btn-gold py-8 rounded-[2rem] text-[12px] flex items-center justify-center gap-4">
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 4H3a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><path d="M1 10h22"/></svg>
+                                                Pagar Pedido con Stripe
+                                            </button>
+                                        </div>
+                                    )}
+                                </motion.div>
+                            </>
+                        )}
+                    </AnimatePresence>
 
                     {notification && (
-                        <div className="fixed bottom-12 left-1/2 -translate-x-1/2 bg-white text-black px-12 py-5 text-[9px] font-black uppercase tracking-[0.4em] z-[200] shadow-[0_20px_60px_rgba(0,0,0,0.8)] rounded-full fade-in">
+                        <motion.div initial={{y:100}} animate={{y:0}} className="fixed bottom-12 left-1/2 -translate-x-1/2 bg-white text-black px-12 py-5 text-[10px] font-black uppercase tracking-[0.4em] z-[200] rounded-full shadow-2xl">
                             {notification}
-                        </div>
+                        </motion.div>
                     )}
-
-                    <footer className="py-24 text-center bg-[#020202] border-t border-zinc-900 mt-20">
-                         <h2 className="font-serif text-3xl font-bold text-white italic uppercase tracking-widest mb-2">CANNABIS<span className="text-emerald-500">SHOP</span></h2>
-                         <p className="text-[9px] uppercase tracking-[0.8em] text-zinc-800 font-black">Private • Exclusive • Pure</p>
-                    </footer>
                 </div>
             );
         }
